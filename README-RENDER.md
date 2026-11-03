@@ -13,7 +13,13 @@ This package is the current QUE browser player packaged as a Node/Express web se
 The server serves the static frontend and exposes `/health`.
 
 ## Spotify configuration
-Set the Spotify Developer Dashboard Redirect URI to the exact URL used by the app, including the trailing slash if the app uses one. Ensure `REDIRECT_URI` in `script.js` matches the Render service URL exactly. Also ensure the deployed hostname is added in Spotify's app settings.
+The configured Spotify Redirect URI is:
+
+```text
+https://muss-9l5v.onrender.com/
+```
+
+Add this exact URI in Spotify Developer Dashboard → your app → Settings → Redirect URIs. Keep the trailing slash, and ensure the same value is used in `script.js` and in the token exchange.
 
 ## Lyrics notes
 The existing QUE client parses Enhanced LRC inline word timestamps when returned by its lyrics source. Standard line-timestamp LRC is handled with estimated word timings as a fallback. This package does not claim that standard LRC has genuine word-level timing.
