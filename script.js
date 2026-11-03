@@ -43,6 +43,7 @@ let dynamicColors = { dominant: null, secondary: null };
 let searchTimeout = null;
 let isPlaying = false;
 let progressInterval = null;
+let progressRaf = null;
 let currentPosition = 0;
 let positionStamp = performance.now();
 let lyricRaf = null;
@@ -290,6 +291,11 @@ function initSpotifyPlayer() {
 
 function startProgressPoll() {
     stopProgressPoll();
+    const barTick = () => {
+        updateWaveProgress();
+        progressRaf = requestAnimationFrame(barTick);
+    };
+    progressRaf = requestAnimationFrame(barTick);
     progressInterval = setInterval(async () => {
         if (!spotifyPlayer || endTransitionLock) return;
         try {
@@ -314,6 +320,8 @@ function startProgressPoll() {
 }
 
 function stopProgressPoll() {
+    if (progressRaf) cancelAnimationFrame(progressRaf);
+    progressRaf = null;
     if (progressInterval) {
         clearInterval(progressInterval);
         progressInterval = null;
@@ -322,7 +330,7 @@ function stopProgressPoll() {
 
 function updateWaveProgress() {
     if (!currentDuration) return;
-    const percent = currentPosition / currentDuration;
+    const percent = Math.min(1, getPlaybackPosition() / currentDuration);
     const point = path.getPointAtLength(percent * pathLength);
     const svg = path.ownerSVGElement;
     const box = svg.viewBox.baseVal;
@@ -1299,12 +1307,27 @@ function parseLRC(lrcText) {
     }
 
     lines.sort((a, b) => a.time - b.time);
+    // LRCLIB only has line-start times, so a line's words are estimated. A line's gap to the
+    // next line includes instrumental pauses, so spreading words across the whole gap makes
+    // the reveal crawl or finish late. Learn this song's singing speed (chars/sec) from
+    // lines that fill their gap, then use it to size each line's sung window.
+    const lineChars = l => l.words.reduce((a, w) => a + [...w.text].length, 0);
+    const gapAfter = (l, i) => (lines[i + 1]?.time ?? (currentDuration ? currentDuration / 1000 : l.time + 5)) - l.time;
+    const rates = [];
+    lines.forEach((l, i) => {
+        const gap = gapAfter(l, i), chars = lineChars(l);
+        if (gap >= 0.6 && gap <= 7 && chars >= 6) rates.push(chars / gap);
+    });
+    rates.sort((a, b) => a - b);
+    const songRate = rates.length >= 3 ? rates[Math.floor(rates.length * 0.7)] : 13;
+
     // Complete missing word ends using the next word timestamp, then next line.
     lines.forEach((line, i) => {
         const nextLineTime = lines[i + 1]?.time ?? (currentDuration ? currentDuration / 1000 : line.time + 5);
         if (line.words.some(w => w.estimatedCount)) {
             const count = line.words.length;
-            const span = Math.max(0.1, nextLineTime - line.time);
+            const gap = Math.max(0.1, nextLineTime - line.time);
+            const span = Math.min(Math.max(0.1, gap - 0.05), Math.max(0.5, lineChars(line) / songRate));
             const weights = line.words.map(w => [...w.text].length + 1);
             const total = weights.reduce((a, b) => a + b, 0);
             let acc = 0;
@@ -1336,10 +1359,16 @@ function samplePosition(pos, stamp) {
 // Lyrics are shown slightly early to cancel SDK + render latency. Tune live with [ and ].
 let lyricOffsetMs = Number(localStorage.getItem("lyricOffsetMs") ?? 250);
 
-function getLivePosition() {
-    if (!isPlaying) return currentPosition + lyricOffsetMs;
-    const live = currentPosition + (performance.now() - positionStamp) + lyricOffsetMs;
+// Real playback position (no lyric offset): used for the progress bar.
+function getPlaybackPosition() {
+    if (!isPlaying) return currentPosition;
+    const live = currentPosition + (performance.now() - positionStamp);
     return currentDuration ? Math.min(live, currentDuration) : live;
+}
+
+// Lyrics position = playback position + display offset.
+function getLivePosition() {
+    return getPlaybackPosition() + lyricOffsetMs;
 }
 
 function updateCurrentLyric() {
@@ -1365,10 +1394,11 @@ function updateCurrentLyric() {
     if (el.dataset.lineIndex !== String(activeIndex)) {
         el.dataset.lineIndex = String(activeIndex);
         el.innerHTML = line.words.map(word => {
-            const safe = escapeLyricHTML(word.text);
+            // Decode entities (&#39; -> ') BEFORE splitting into letters, then escape each letter.
+            const chars = [...decodeLyricText(word.text)];
             const duration = Math.max(60, (word.end - word.time) * 1000);
-            return `<span class="lyric-word" data-start="${word.time}" data-end="${word.end}">${[...safe].map((ch, i) =>
-                `<span class="lyric-letter" style="--letter-duration:${Math.max(45, duration / Math.max(1, [...safe].length))}ms;--letter-delay:${i * duration / Math.max(1, [...safe].length)}ms">${ch === " " ? "&nbsp;" : ch}</span>`
+            return `<span class="lyric-word" data-start="${word.time}" data-end="${word.end}">${chars.map((ch, i) =>
+                `<span class="lyric-letter">${ch === " " ? "&nbsp;" : escapeLyricChar(ch)}</span>`
             ).join("")}</span> `;
         }).join("");
         el.classList.add("show");
@@ -1389,10 +1419,8 @@ function updateCurrentLyric() {
     });
 }
 
-function escapeLyricHTML(value) {
-    // Lyrics providers sometimes return text that is already HTML-encoded
-    // (occasionally double-encoded, e.g. &amp;#39;). Decode entities as text
-    // before escaping once for safe insertion into the lyric markup.
+function decodeLyricText(value) {
+    // Lyrics providers sometimes return HTML-encoded (even double-encoded) text.
     const decoder = document.createElement("textarea");
     let decoded = String(value ?? "");
     for (let i = 0; i < 2; i++) {
@@ -1401,9 +1429,11 @@ function escapeLyricHTML(value) {
         if (next === decoded) break;
         decoded = next;
     }
-    return decoded.replace(/[&<>"']/g, char => ({
-        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-    })[char]);
+    return decoded;
+}
+
+function escapeLyricChar(ch) {
+    return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch;
 }
 
 function stopLyricLoop() {
