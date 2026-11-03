@@ -1,4 +1,3 @@
-
 /* LIQUID GLASS MUSIC PLAYER             */
 
 :root {
@@ -1139,7 +1138,7 @@ body {
     color: #fff;
     opacity: .34;
     will-change: opacity, transform;
-    transition: opacity 70ms linear, transform 70ms linear;
+    transition: none;
 }
 #current-lyric .lyric-word.word-current .lyric-letter {
     text-shadow: 0 0 10px rgba(255,255,255,.16);
