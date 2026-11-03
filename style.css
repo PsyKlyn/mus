@@ -1146,3 +1146,13 @@ body {
 @media (prefers-reduced-motion: reduce) {
     #current-lyric .lyric-letter { transition: none !important; }
 }
+
+/* Lyrics: no glow / shadow edges */
+#current-lyric,
+#current-lyric.show,
+#current-lyric .lyric-word,
+#current-lyric .lyric-letter,
+#current-lyric .lyric-word.word-current .lyric-letter {
+    text-shadow: none !important;
+    filter: none !important;
+}
