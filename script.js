@@ -293,9 +293,10 @@ function startProgressPoll() {
     progressInterval = setInterval(async () => {
         if (!spotifyPlayer || endTransitionLock) return;
         try {
+            const t0 = performance.now();
             const state = await spotifyPlayer.getCurrentState();
             if (!state) return;
-            currentPosition = state.position; positionStamp = performance.now();
+            samplePosition(state.position, t0);
             currentDuration = state.duration;
             updateWaveProgress();
             updateCurrentLyric();
@@ -555,16 +556,42 @@ searchInput.addEventListener("input", () => {
 });
 
 
-async function fetchLyrics(track, artist) {
+function cleanTrackTitle(title) {
+    return String(title)
+        .replace(/\s*[-–—]\s*(\d{4}\s*)?(remaster(ed)?|live|radio edit|mono|stereo|single version|deluxe|bonus track|from\b).*$/i, "")
+        .replace(/\s*[\(\[]\s*(feat|ft|with|remaster(ed)?|live|radio edit)\b[^\)\]]*[\)\]]/gi, "")
+        .trim();
+}
+
+async function fetchLyrics(track, artist, durationMs) {
+    const durSec = durationMs ? Math.round(durationMs / 1000) : null;
+    const base = "https://lrclib.net/api";
+    const titles = [...new Set([track, cleanTrackTitle(track)])];
+    const mainArtist = String(artist).split(/,|&| feat\.? | x /i)[0].trim();
+
     try {
-        const url = `https://lrclib.net/api/get?track_name=${encodeURIComponent(track)}&artist_name=${encodeURIComponent(artist)}`;
-        const response = await fetch(url);
+        // 1) Exact match, constrained to the same recording length (±2s on LRCLIB).
+        for (const t of titles) {
+            const q = new URLSearchParams({ track_name: t, artist_name: artist });
+            if (durSec) q.set("duration", String(durSec));
+            const r = await fetch(`${base}/get?${q}`);
+            if (r.ok) {
+                const d = await r.json();
+                if (d.syncedLyrics) return d.syncedLyrics;
+            }
+        }
 
-        if (!response.ok) return null;
-
-        const data = await response.json();
-        // Prefer timed lyrics; unsynced text cannot follow playback.
-        return data.syncedLyrics || null;
+        // 2) Search fallback: pick the synced result whose length is closest to the Spotify track.
+        const q = new URLSearchParams({ track_name: titles[titles.length - 1], artist_name: mainArtist });
+        const r = await fetch(`${base}/search?${q}`);
+        if (!r.ok) return null;
+        const results = (await r.json()).filter(x => x.syncedLyrics);
+        if (!results.length) return null;
+        if (!durSec) return results[0].syncedLyrics;
+        results.sort((a, b) => Math.abs(a.duration - durSec) - Math.abs(b.duration - durSec));
+        const best = results[0];
+        // A length mismatch means a different version, whose timestamps would be off.
+        return Math.abs(best.duration - durSec) <= 8 ? best.syncedLyrics : null;
     } catch (err) {
         console.error("Lyrics fetch error:", err);
         return null;
@@ -631,7 +658,7 @@ async function loadSong() {
         lyricElement.textContent = "Loading lyrics…";
     }
 
-    fetchLyrics(song.title, song.artist).then(lrc => {
+    fetchLyrics(song.title, song.artist, song.duration).then(lrc => {
         // A previous song's delayed response must never replace current lyrics.
         if (thisLyricsRequest !== lyricsRequestId || current !== songs.indexOf(song)) return;
 
@@ -1295,9 +1322,23 @@ function parseLRC(lrcText) {
     return lines;
 }
 
+// Poll samples only correct the clock when it has really drifted, so small
+// SDK jitter doesn't make lyrics jump back and forth.
+function samplePosition(pos, stamp) {
+    if (isPlaying) {
+        const predicted = currentPosition + (stamp - positionStamp);
+        if (Math.abs(pos - predicted) < 120) return;
+    }
+    currentPosition = pos;
+    positionStamp = stamp;
+}
+
+// Lyrics are shown slightly early to cancel SDK + render latency. Tune live with [ and ].
+let lyricOffsetMs = Number(localStorage.getItem("lyricOffsetMs") ?? 250);
+
 function getLivePosition() {
-    if (!isPlaying) return currentPosition;
-    const live = currentPosition + (performance.now() - positionStamp);
+    if (!isPlaying) return currentPosition + lyricOffsetMs;
+    const live = currentPosition + (performance.now() - positionStamp) + lyricOffsetMs;
     return currentDuration ? Math.min(live, currentDuration) : live;
 }
 
@@ -1395,6 +1436,25 @@ function showLyric(element, text) {
 
     }, 200);
 }
+
+// LYRIC OFFSET HOTKEYS: "]" shows lyrics earlier, "[" shows them later.
+document.addEventListener("keydown", e => {
+    if (e.target.matches?.("input, textarea")) return;
+    if (e.key !== "[" && e.key !== "]") return;
+    lyricOffsetMs += e.key === "]" ? 50 : -50;
+    localStorage.setItem("lyricOffsetMs", String(lyricOffsetMs));
+    let t = document.getElementById("lyric-offset-toast");
+    if (!t) {
+        t = document.createElement("div");
+        t.id = "lyric-offset-toast";
+        t.style.cssText = "position:fixed;left:1.5cm;bottom:24px;z-index:1000;color:#fff;font:14px sans-serif;background:rgba(0,0,0,.55);padding:6px 12px;border-radius:999px;pointer-events:none;transition:opacity .3s";
+        document.body.appendChild(t);
+    }
+    t.textContent = `Lyric offset: ${lyricOffsetMs > 0 ? "+" : ""}${lyricOffsetMs} ms`;
+    t.style.opacity = "1";
+    clearTimeout(t._h);
+    t._h = setTimeout(() => (t.style.opacity = "0"), 1200);
+});
 
 // BOOT
 
