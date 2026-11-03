@@ -2,7 +2,7 @@
 // SPOTIFY CONFIG
 
 const CLIENT_ID = "444ffc8623ac4e0f890787e960e4c040";
-const REDIRECT_URI = "https://mus-q5eh.onrender.com/";
+const REDIRECT_URI = "https://imaginative-yeot-5c2ec6.netlify.app/";
 const SCOPES = [
     "streaming",
     "user-read-email",
@@ -1338,7 +1338,18 @@ function updateCurrentLyric() {
 }
 
 function escapeLyricHTML(value) {
-    return String(value).replace(/[&<>"']/g, char => ({
+    // Lyrics providers sometimes return text that is already HTML-encoded
+    // (occasionally double-encoded, e.g. &amp;#39;). Decode entities as text
+    // before escaping once for safe insertion into the lyric markup.
+    const decoder = document.createElement("textarea");
+    let decoded = String(value ?? "");
+    for (let i = 0; i < 2; i++) {
+        decoder.innerHTML = decoded;
+        const next = decoder.value;
+        if (next === decoded) break;
+        decoded = next;
+    }
+    return decoded.replace(/[&<>"']/g, char => ({
         "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
     })[char]);
 }

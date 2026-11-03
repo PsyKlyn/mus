@@ -1,0 +1,19 @@
+# QUE — Enhanced Lyrics Web Service
+
+This package is the current QUE browser player packaged as a Node/Express web service for Render.
+
+## Deploy on Render
+1. Upload these files to your GitHub repository (project root).
+2. In Render, create **New > Web Service** and connect the repository.
+3. Runtime: Node.
+4. Build command: `npm install`
+5. Start command: `npm start`
+6. Deploy.
+
+The server serves the static frontend and exposes `/health`.
+
+## Spotify configuration
+Set the Spotify Developer Dashboard Redirect URI to the exact URL used by the app, including the trailing slash if the app uses one. Ensure `REDIRECT_URI` in `script.js` matches the Render service URL exactly. Also ensure the deployed hostname is added in Spotify's app settings.
+
+## Lyrics notes
+The existing QUE client parses Enhanced LRC inline word timestamps when returned by its lyrics source. Standard line-timestamp LRC is handled with estimated word timings as a fallback. This package does not claim that standard LRC has genuine word-level timing.

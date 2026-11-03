@@ -1,0 +1,12 @@
+{
+  "name": "que-enhanced-lyrics",
+  "version": "1.0.0",
+  "private": true,
+  "description": "QUE Spotify web player with word-timed lyrics, deployable as a Render Web Service",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
