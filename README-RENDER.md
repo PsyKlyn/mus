@@ -23,3 +23,14 @@ Add this exact URI in Spotify Developer Dashboard → your app → Settings → 
 
 ## Lyrics notes
 The existing QUE client parses Enhanced LRC inline word timestamps when returned by its lyrics source. Standard line-timestamp LRC is handled with estimated word timings as a fallback. This package does not claim that standard LRC has genuine word-level timing.
+
+## Word-timed lyrics (Apple Music style)
+`server.js` exposes `GET /api/lyrics?title=&artist=&album=&duration=` (duration in seconds). It asks
+the LyricsPlus aggregator for word/syllable-timed lyrics (`lyrics.js`), normalises them, caches results,
+and returns `{ source, lines: [{ time, end, text, words: [{ text, time, end }] }] }` (times in seconds).
+If nothing word-timed is found, the browser falls back to LRCLIB line-synced lyrics with estimated word timing.
+
+LyricsPlus is an unofficial, community-run service: it can change or go offline, and its source data may
+have licensing terms of its own. Needs Node 18+ (global `fetch`).
+
+Lyric timing tweak in the browser: press `]` to show lyrics earlier, `[` for later (50 ms steps, saved locally).

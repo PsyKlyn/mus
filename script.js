@@ -1,3 +1,4 @@
+
 // SPOTIFY CONFIG
 
 const CLIENT_ID = "444ffc8623ac4e0f890787e960e4c040";
@@ -513,6 +514,7 @@ function addToQueue(track, playNow = false) {
         uri: track.uri,
         title: track.name,
         artist: track.artists.map(a => a.name).join(", "),
+        album: track.album?.name || "",
         image: img,
         duration: track.duration_ms
     };
@@ -564,6 +566,29 @@ searchInput.addEventListener("input", () => {
 });
 
 
+// Word-timed lyrics (Apple Music-style) from our own server, which proxies LyricsPlus.
+async function fetchWordLyrics(track, artist, album, durationMs) {
+    try {
+        const q = new URLSearchParams({ title: track, artist });
+        if (album) q.set("album", album);
+        if (durationMs) q.set("duration", String(Math.round(durationMs / 1000)));
+        const r = await fetch(`/api/lyrics?${q}`);
+        if (!r.ok) return null;
+        const d = await r.json();
+        return Array.isArray(d.lines) && d.lines.length ? d : null;
+    } catch {
+        return null; // e.g. opened without the Node server: fall back to LRCLIB
+    }
+}
+
+// Returns { lines } (genuine word timing) or { lrc } (line-synced, estimated words) or null.
+async function fetchLyrics(track, artist, durationMs, album) {
+    const word = await fetchWordLyrics(track, artist, album, durationMs);
+    if (word) return word;
+    const lrc = await fetchLrclibLyrics(track, artist, durationMs);
+    return lrc ? { lrc } : null;
+}
+
 function cleanTrackTitle(title) {
     return String(title)
         .replace(/\s*[-–—]\s*(\d{4}\s*)?(remaster(ed)?|live|radio edit|mono|stereo|single version|deluxe|bonus track|from\b).*$/i, "")
@@ -571,7 +596,7 @@ function cleanTrackTitle(title) {
         .trim();
 }
 
-async function fetchLyrics(track, artist, durationMs) {
+async function fetchLrclibLyrics(track, artist, durationMs) {
     const durSec = durationMs ? Math.round(durationMs / 1000) : null;
     const base = "https://lrclib.net/api";
     const titles = [...new Set([track, cleanTrackTitle(track)])];
@@ -666,20 +691,21 @@ async function loadSong() {
         lyricElement.textContent = "Loading lyrics…";
     }
 
-    fetchLyrics(song.title, song.artist, song.duration).then(lrc => {
+    fetchLyrics(song.title, song.artist, song.duration, song.album).then(result => {
         // A previous song's delayed response must never replace current lyrics.
         if (thisLyricsRequest !== lyricsRequestId || current !== songs.indexOf(song)) return;
 
-        if (!lrc) {
+        if (!result) {
             if (lyricElement) lyricElement.textContent = "No synced lyrics found";
             return;
         }
 
-        const parsedLyrics = parseLRC(lrc);
+        const parsedLyrics = result.lines ?? parseLRC(result.lrc);
         if (!parsedLyrics.length) {
             if (lyricElement) lyricElement.textContent = "No synced lyrics found";
             return;
         }
+        console.log(result.lines ? `Lyrics: word-timed (${result.source})` : "Lyrics: line-synced (estimated words)");
 
         currentLyrics = parsedLyrics;
         updateCurrentLyric();
@@ -892,6 +918,7 @@ async function fetchSmartRecommendations() {
                     uri: track.uri, title: track.name,
                     artist: (track.artists || []).map(a => a.name).join(', '),
                     image: track.album?.images?.[1]?.url || track.album?.images?.[0]?.url || '',
+                    album: track.album?.name || '',
                     duration: track.duration_ms, year,
                     popularity: track.popularity || 0,
                     smartRecommended: true
@@ -1259,6 +1286,21 @@ function setBackground(img) {
 // LYRICS SYSTEM
 
 
+// Estimated sung length of a word, in "syllable units". Singing time follows syllables,
+// not letters; stretched spellings (Woahhhh, yeaaah) are held longer; a trailing
+// comma / period / ? / ! gets a short hold.
+function wordWeight(raw) {
+    const decoded = decodeLyricText(raw);
+    const letters = decoded.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
+    if (!letters) return 0.5;
+    let extra = 0;
+    const collapsed = letters.replace(/(.)\1{2,}/g, (m, c) => { extra += m.length - 2; return c + c; });
+    let syl = Math.max(1, (collapsed.match(/[aeiouyà-ÿ]+/g) || []).length);
+    if (syl > 1 && /[^aeiouyl]e$/.test(collapsed)) syl--; // silent final e
+    const hold = /[,.;:!?…)]["']?$/.test(decoded) ? 0.6 : 0;
+    return syl + extra * 0.5 + hold + 0.3;
+}
+
 function parseLRC(lrcText) {
     const lines = [];
     const lineStamp = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;
@@ -1319,7 +1361,7 @@ function parseLRC(lrcText) {
         if (gap >= 0.6 && gap <= 7 && chars >= 6) rates.push(chars / gap);
     });
     rates.sort((a, b) => a - b);
-    const songRate = rates.length >= 3 ? rates[Math.floor(rates.length * 0.7)] : 13;
+    const songRate = rates.length >= 3 ? rates[Math.floor(rates.length * 0.85)] : 13;
 
     // Complete missing word ends using the next word timestamp, then next line.
     lines.forEach((line, i) => {
@@ -1327,8 +1369,8 @@ function parseLRC(lrcText) {
         if (line.words.some(w => w.estimatedCount)) {
             const count = line.words.length;
             const gap = Math.max(0.1, nextLineTime - line.time);
-            const span = Math.min(Math.max(0.1, gap - 0.05), Math.max(0.5, lineChars(line) / songRate));
-            const weights = line.words.map(w => [...w.text].length + 1);
+            const span = Math.min(Math.max(0.1, gap - 0.05), Math.max(0.3, lineChars(line) / songRate));
+            const weights = line.words.map(w => wordWeight(w.text));
             const total = weights.reduce((a, b) => a + b, 0);
             let acc = 0;
             line.words.forEach((w, wi) => {
@@ -1348,11 +1390,16 @@ function parseLRC(lrcText) {
 // Poll samples only correct the clock when it has really drifted, so small
 // SDK jitter doesn't make lyrics jump back and forth.
 function samplePosition(pos, stamp) {
-    if (isPlaying) {
-        const predicted = currentPosition + (stamp - positionStamp);
-        if (Math.abs(pos - predicted) < 120) return;
+    if (!isPlaying) { currentPosition = pos; positionStamp = stamp; return; }
+    const predicted = currentPosition + (stamp - positionStamp);
+    const err = pos - predicted;
+    if (Math.abs(err) > 400) {
+        // Real jump (seek, buffering): snap.
+        currentPosition = pos;
+    } else {
+        // Small drift: absorb a fraction of the error so speed never visibly changes.
+        currentPosition = predicted + err * 0.2;
     }
-    currentPosition = pos;
     positionStamp = stamp;
 }
 
