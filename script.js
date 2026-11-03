@@ -1,4 +1,3 @@
-
 // SPOTIFY CONFIG
 
 const CLIENT_ID = "444ffc8623ac4e0f890787e960e4c040";
@@ -45,6 +44,8 @@ let searchTimeout = null;
 let isPlaying = false;
 let progressInterval = null;
 let currentPosition = 0;
+let positionStamp = performance.now();
+let lyricRaf = null;
 let currentDuration = 0;
 let smartShuffleEnabled = false;
 let smartRecommendationBusy = false;
@@ -242,7 +243,7 @@ function initSpotifyPlayer() {
     spotifyPlayer.addListener("player_state_changed", state => {
         if (!state) return;
         isPlaying = !state.paused;
-        currentPosition = state.position;
+        currentPosition = state.position; positionStamp = performance.now();
         currentDuration = state.duration;
         // Lyrics/progress depend on the current track duration and position.
         updateCurrentLyric();
@@ -254,11 +255,11 @@ function initSpotifyPlayer() {
 
         if (state.paused) {
 
-            clearInterval(lyricInterval);
+            stopLyricLoop();
 
         } else if (
             currentLyrics.length > 0 &&
-            !lyricInterval
+            !lyricRaf
         ) {
 
             syncLyrics(currentLyrics);
@@ -294,7 +295,7 @@ function startProgressPoll() {
         try {
             const state = await spotifyPlayer.getCurrentState();
             if (!state) return;
-            currentPosition = state.position;
+            currentPosition = state.position; positionStamp = performance.now();
             currentDuration = state.duration;
             updateWaveProgress();
             updateCurrentLyric();
@@ -619,7 +620,7 @@ async function loadSong() {
 
     // Reset lyric state and invalidate any older request (race protection).
     const thisLyricsRequest = ++lyricsRequestId;
-    clearInterval(lyricInterval);
+    stopLyricLoop();
     lyricInterval = null;
     currentLyrics = [];
     currentLyricIndex = -1;
@@ -916,7 +917,7 @@ async function seek(e) {
             method: "PUT",
             headers: { Authorization: `Bearer ${accessToken}` }
         });
-        currentPosition = position;
+        currentPosition = position; positionStamp = performance.now();
         updateCurrentLyric();
         updateWaveProgress();
     } catch (err) {
@@ -1068,7 +1069,7 @@ function removeSong(index) {
         current = 0;
         currentLyrics = [];
         currentLyricIndex = -1;
-        clearInterval(lyricInterval);
+        stopLyricLoop();
         lyricInterval = null;
         stopProgressPoll();
 
@@ -1277,9 +1278,13 @@ function parseLRC(lrcText) {
         if (line.words.some(w => w.estimatedCount)) {
             const count = line.words.length;
             const span = Math.max(0.1, nextLineTime - line.time);
+            const weights = line.words.map(w => [...w.text].length + 1);
+            const total = weights.reduce((a, b) => a + b, 0);
+            let acc = 0;
             line.words.forEach((w, wi) => {
-                w.time = line.time + span * wi / count;
-                w.end = line.time + span * (wi + 1) / count;
+                w.time = line.time + span * acc / total;
+                acc += weights[wi];
+                w.end = line.time + span * acc / total;
             });
         } else {
             line.words.forEach((w, wi) => {
@@ -1290,9 +1295,15 @@ function parseLRC(lrcText) {
     return lines;
 }
 
+function getLivePosition() {
+    if (!isPlaying) return currentPosition;
+    const live = currentPosition + (performance.now() - positionStamp);
+    return currentDuration ? Math.min(live, currentDuration) : live;
+}
+
 function updateCurrentLyric() {
     if (!currentLyrics.length) return;
-    const now = currentPosition / 1000;
+    const now = getLivePosition() / 1000;
     let activeIndex = -1;
     for (let i = 0; i < currentLyrics.length; i++) {
         if (currentLyrics[i].time <= now) activeIndex = i;
@@ -1354,10 +1365,21 @@ function escapeLyricHTML(value) {
     })[char]);
 }
 
-function syncLyrics(lyrics) {
+function stopLyricLoop() {
+    if (lyricRaf) cancelAnimationFrame(lyricRaf);
+    lyricRaf = null;
     clearInterval(lyricInterval);
+    lyricInterval = null;
+}
+
+function syncLyrics(lyrics) {
+    stopLyricLoop();
     currentLyrics = lyrics;
-    lyricInterval = setInterval(updateCurrentLyric, 100);
+    const tick = () => {
+        updateCurrentLyric();
+        lyricRaf = requestAnimationFrame(tick);
+    };
+    lyricRaf = requestAnimationFrame(tick);
 }
 
 function showLyric(element, text) {
