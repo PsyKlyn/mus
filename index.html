@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QUE_UEDS Music Player</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.2/color-thief.umd.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div id="bg"></div>
+
+
+    <div class="login-screen" id="loginScreen">
+        <div class="login-card">
+            <div class="login-logo">
+                <i class="fa-brands fa-spotify"></i>
+            </div>
+            <h1 class="login-title">que_ueds</h1>
+            <p class="login-subtitle">Connect your Spotify account</p>
+            <button class="login-btn" onclick="loginWithSpotify()">
+                <i class="fa-brands fa-spotify"></i>
+                Login with Spotify
+            </button>
+        </div>
+    </div>
+
+
+    <div class="player-screen" id="playerScreen" style="display:none;">
+
+
+        <div class="search-bar-wrapper">
+            <div class="search-bar">
+                <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                <input type="text" id="searchInput" placeholder="Search any song on Spotify..." autocomplete="off" />
+                <button id="searchBtn" onclick="searchSpotify()">
+                    <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </div>
+            <div class="search-results" id="searchResults"></div>
+        </div>
+
+        <div class="container">
+            <div class="main-content">
+                <div id="lyrics-container">
+                    <div id="current-lyric"></div>
+                </div>
+                <div class="carousel-wrapper">
+                    <div class="carousel" id="carousel"></div>
+                </div>
+                <div class="player">
+                    <button onclick="prev()"><i class="fa-solid fa-backward"></i></button>
+                    <button onclick="togglePlay()"><i id="playIcon" class="fa-solid fa-play"></i></button>
+                    <button onclick="next()"><i class="fa-solid fa-forward"></i></button>
+                    <div class="wave-player" onclick="seek(event)">
+                        <svg viewBox="0 0 500 80" class="wave-bg">
+                            <path d="M0 40 C40 10 80 70 120 40 S200 10 240 40 S320 70 360 40 S440 10 500 40" />
+                        </svg>
+                        <svg viewBox="0 0 500 80" class="wave-progress">
+                            <defs>
+                                <linearGradient id="waveGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" style="stop-color:rgba(200,200,255,0.3);stop-opacity:1" />
+                                    <stop offset="50%" style="stop-color:rgba(200,200,255,0.8);stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:rgba(150,150,255,0.3);stop-opacity:1" />
+                                </linearGradient>
+                            </defs>
+                            <path id="waveProgress"
+                                d="M0 40 C40 10 80 70 120 40 S200 10 240 40 S320 70 360 40 S440 10 500 40" />
+                        </svg>
+                        <div class="slider" id="slider"></div>
+                    </div>
+                    <img id="cover">
+                    <div class="song-info">
+                        <b id="title">Search a song</b>
+                        <span id="artist">Spotify</span>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="queue-panel">
+                <div class="queue-header queue-heading-row"><span>QUEUE</span><button id="smartShuffleBtn" class="smart-shuffle-btn" onclick="toggleSmartShuffle()" aria-pressed="false"><i class="fa-solid fa-shuffle"></i> Smart Shuffle Off</button></div>
+                <div class="queue-list" id="queueList"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Define the SDK callback before loading Spotify's SDK. -->
+    <script>
+        window.onSpotifyWebPlaybackSDKReady = function () {
+            window.spotifyWebPlaybackSDKReady = true;
+        };
+    </script>
+    <!-- Spotify Web Playback SDK -->
+    <script src="https://sdk.scdn.co/spotify-player.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
