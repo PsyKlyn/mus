@@ -2,7 +2,7 @@
 // SPOTIFY CONFIG
 
 const CLIENT_ID = "444ffc8623ac4e0f890787e960e4c040";
-const REDIRECT_URI = "https://mus-q5eh.onrender.com/";
+const REDIRECT_URI = "https://muss-9l5v.onrender.com/";
 const SCOPES = [
     "streaming",
     "user-read-email",
