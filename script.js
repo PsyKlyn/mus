@@ -2,7 +2,7 @@
 // SPOTIFY CONFIG
 
 const CLIENT_ID = "444ffc8623ac4e0f890787e960e4c040";
-const REDIRECT_URI = "https://mus-q5eh.onrender.com/";
+const REDIRECT_URI = "https://imaginative-yeot-5c2ec6.netlify.app/";
 const SCOPES = [
     "streaming",
     "user-read-email",
@@ -1316,7 +1316,7 @@ function updateCurrentLyric() {
             const safe = escapeLyricHTML(word.text);
             const duration = Math.max(60, (word.end - word.time) * 1000);
             return `<span class="lyric-word" data-start="${word.time}" data-end="${word.end}">${[...safe].map((ch, i) =>
-                `<span class="lyric-letter" style="--letter-duration:${Math.max(45, duration / Math.max(1, [...safe].length)}ms;--letter-delay:${i * duration / Math.max(1, [...safe].length)}ms">${ch === " " ? "&nbsp;" : ch}</span>`
+                `<span class="lyric-letter" style="--letter-duration:${Math.max(45, duration / Math.max(1, [...safe].length))}ms;--letter-delay:${i * duration / Math.max(1, [...safe].length)}ms">${ch === " " ? "&nbsp;" : ch}</span>`
             ).join("")}</span> `;
         }).join("");
         el.classList.add("show");
